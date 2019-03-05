@@ -22,13 +22,16 @@ import os
 import platform
 import re
 import shutil
+import sys
 import time
 import unittest
 import warnings
+from argparse import ArgumentParser
 from collections import defaultdict, Counter
 from distutils.version import LooseVersion
 
 import numpy as np
+import pytest
 from lxml import etree
 
 from obspy.core.util.base import NamedTemporaryFile, MATPLOTLIB_VERSION
