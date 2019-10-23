@@ -16,8 +16,11 @@ import pytest
 
 from obspy.core.util.version import get_git_version
 from obspy.core.util import NETWORK_MODULES
-import obspy.core.util.testing as otest
-# from obspy.core.util.testing import _create_report, DEFAULT_TEST_SERVER, _send_report
+from obspy.testing.testrunner import (
+    DEFAULT_TEST_SERVER,
+    _create_report,
+    _send_report,
+)
 
 
 PSTATS_HELP = """
@@ -61,7 +64,7 @@ def pytest_addoption(parser):
     report = parser.getgroup('Reporting Options')
     report.addoption('--report', action='store_true', default=False,
                      help='automatically submit a test report')
-    report.addoption('--server', default=otest.DEFAULT_TEST_SERVER,
+    report.addoption('--server', default=DEFAULT_TEST_SERVER,
                      help='report server (default is tests.obspy.org)')
     report.addoption('--node', dest='hostname', default=HOSTNAME,
                      help='nodename visible at the report server')
@@ -94,6 +97,7 @@ def pytest_collection_modifyitems(config, items):
         # get the obspy model test originates from (eg clients.arclink)
         obspy_node = '.'.join(item.nodeid.split('/')[1:3])
         # if test is a network test apply network marker
+        # TODO apply proper marks
         if obspy_node in network_nodes:
             item.add_marker(pytest.mark.network)
 
@@ -124,13 +128,13 @@ def pytest_runtest_makereport(item):
     """
     outcome = yield
     result = outcome.get_result()
-    if result.when == 'call':
+    if result.when == 'call' or result.outcome != 'passed':
         item.session._results[result.nodeid] = result
 
 
 def pytest_sessionfinish(session, exitstatus):
     """ Hook called when all tests runs finish. """
     if session.config.getoption('--report'):
-        results, params = otest._create_report(session)
+        results, params = _create_report(session)
         breakpoint()
-        otest._send_report(session, params)
+        _send_report(session, params)

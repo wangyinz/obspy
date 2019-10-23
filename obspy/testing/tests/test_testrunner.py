@@ -5,6 +5,9 @@ Tests for ObsPy's testrunner.
 testrunner's functions are primarily a compatibility layer from ObsPy's old
 test runner to use pytest under the hood.
 """
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+
 import shlex
 
 from obspy.testing.testrunner import _convert_to_pytest_input, _configure_parser

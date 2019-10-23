@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Testing utilities for ObsPy.
 
@@ -23,10 +24,8 @@ from collections import defaultdict, Counter
 
 import numpy as np
 import pytest
-from lxml import etree
 
 import obspy
-from obspy.core.util.base import NamedTemporaryFile, MATPLOTLIB_VERSION
 from obspy.core.util.misc import MatplotlibBackend
 from obspy.core.util.version import get_git_version
 
@@ -62,10 +61,7 @@ def _create_report(session):
 
     from obspy.core.util.version import get_git_version
     from xml.etree import ElementTree
-    from obspy.core.compatibility import urlparse
-    import requests
     import obspy.core.util.base as obase
-    # from obspy.core.base import ALL_MODULES, NETWORK_MODULES
     from xml.sax.saxutils import escape
 
     def _read_log(path):
@@ -117,7 +113,7 @@ def _create_report(session):
 
     def _dict2xml(result, doc=None):
         """ Generate xml document to send to server. """
-        doc = doc or ElementTree.Element("report")
+        doc = ElementTree.Element("report") if doc is None else doc
         for key, value in result.items():
             key = key.split('(')[0].strip()
             if isinstance(value, dict):
@@ -136,23 +132,7 @@ def _create_report(session):
 
     def _get_module_info(module, ttrs):
         """ Create a dict of results for a given module. """
-
         out = {'installed': installed}
-        # TODO get modules that fail to import...
-        # add a failed-to-import test module to report with an error
-        # if module in import_failures:
-        #     result['obspy'][module]['timetaken'] = 0
-        #     result['obspy'][module]['tested'] = True
-        #     result['obspy'][module]['tests'] = 1
-        #     # can't say how many tests would have been in that suite so just
-        #     # leave 0
-        #     result['obspy'][module]['skipped'] = 0
-        #     result['obspy'][module]['failures'] = {}
-        #     result['obspy'][module]['errors'] = {
-        #         'f%s' % (errors): import_failures[module]}
-        #     tests += 1
-        #     errors += 1
-        #     continue
         if module not in ttrs:
             return out
         test_results = ttrs[module]  # a list of test results for module
@@ -167,13 +147,17 @@ def _create_report(session):
         # or errors (all others)
         out['errors'] = {}
         out['failures'] = {}
-        count = 0
+        fail_count = 0
+        error_count = 0
         for result in test_results:
-            # TODO figure out how to tell if failure or error (errors have
-            # outcome == 'failed)
             if result.outcome == 'failed':
-                out['failures']['f%d' % count] = result.longreprtext
-                count += 1
+                txt = result.longreprtext
+                if result.when == 'call':  # on call are actual failures
+                    out['failures']['f%d' % fail_count] = txt
+                    fail_count += 1
+                else:  # anything else is an error
+                    out['errors']['e%d' % error_count] = txt
+                    error_count += 1
         return out
 
     def _get_dependency_versions():
@@ -215,7 +199,7 @@ def _create_report(session):
         out['node'] = hostname
         # post only the first part of the node name (only applies to MacOS X)
         try:
-            out['node'] = result['platform']['node'].split('.')[0]
+            out['node'] = result['node'].split('.')[0]
         except Exception:
             pass
         return out
@@ -294,7 +278,7 @@ def _create_report(session):
     result['skipped_tests_details'] = _get_skipped_test_details(ttrs)
     # generate params to send to sever
     params = urllib.parse.urlencode({
-        'timestamp': timestamp,
+        'timestamp': int(timestamp),
         'system': result['platform']['system'],
         'python_version': result['platform']['python_version'],
         'architecture': result['platform']['architecture'],
@@ -302,27 +286,25 @@ def _create_report(session):
         'failures': outcome_count['failures'],
         'errors': outcome_count['errors'],
         'modules': len(ttrs) + len(import_failures),
-        'xml': _dict2xml(result)
+        'xml': _dict2xml(result),
     })
+
     return result, params
 
 
 def _send_report(session, params):
     """ Send the test report to the server. """
-
-    from future import standard_library
-
     from obspy.core.compatibility import urlparse
     import requests
 
     # get command line arg info used in the report
     server = session.config.getoption('--server')
-
     headers = {"Content-type": "application/x-www-form-urlencoded",
                "Accept": "text/plain"}
     url = server
     if not urlparse(url).scheme:
         url = "https://" + url
+    # send post request to server, await response
     response = requests.post(url=url, headers=headers,
                              data=params.encode('UTF-8'))
     # get the response
@@ -501,10 +483,18 @@ def _convert_to_pytest_input(args, input_args=None):
     return out
 
 
-def run_tests(argv=None, interactive=True):
+def run_tests(argv=None, rootdir=None):
     """
-    Run the obspy test suite with pytest. Return pytest's exit code.
+    Run the obspy test suite with pytest.
+
+    All arguments are passed to pytest
+    Return pytest's exit code.
     """
+    # Set numpy legacy printing so the doctests work for all versions.
+    try:
+        np.set_printoptions(legacy='1.13')
+    except TypeError:
+        pass
     MatplotlibBackend.switch_backend("AGG", sloppy=False)
     # get input and make sure it is split
     input_args = sys.argv[1:] if argv is None else shlex.split(argv)
@@ -517,14 +507,12 @@ def run_tests(argv=None, interactive=True):
     args = parser.parse_args(input_args)
     # convert input to a pytest-able string
     pytest_input = _convert_to_pytest_input(args, input_args)
+    if rootdir is not None:
+        here = os.getcwd()
+        os.chdir(rootdir)
     # run pytest!
-    return pytest.main(pytest_input)
-
-
-
-    # return run_tests(verbosity, args.tests, report, args.log, args.server,
-    #                  args.test_all_modules, args.timeit, interactive, args.n,
-    #                  exclude=args.exclude, tutorial=args.tutorial,
-    #                  hostname=args.hostname, ci_url=args.ci_url,
-    #                  pr_url=args.pr_url)
+    results = pytest.main(pytest_input)
+    if rootdir is not None:
+        os.chdir(here)
+    return results
 
