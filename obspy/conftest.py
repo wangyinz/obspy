@@ -7,8 +7,8 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 from future.builtins import *  # NOQA @UnusedWildImport
 
+import os
 import platform
-import sys
 import time
 
 import numpy as np
@@ -106,7 +106,9 @@ def pytest_configure(config):
     # if obspy version just print it and exit
     if config.getoption('--obspy-version'):
         print(get_git_version())
-        sys.exit(0)
+        # We need to use os exit to avoid pytest catching the exit and
+        # complaining about it. See # http://bit.ly/31E12pb.
+        os._exit(0)
     # If the all option is not set skip all network tests
     if not config.getoption('--network'):
         setattr(config.option, 'markexpr', 'not network')
@@ -136,5 +138,4 @@ def pytest_sessionfinish(session, exitstatus):
     """ Hook called when all tests runs finish. """
     if session.config.getoption('--report'):
         results, params = _create_report(session)
-        breakpoint()
         _send_report(session, params)
