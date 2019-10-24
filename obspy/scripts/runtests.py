@@ -4,10 +4,11 @@
 A command-line program that runs all ObsPy tests.
 
 All tests in ObsPy are located in the tests directory of the each specific
-module. The __init__.py of the tests directory itself as well as every test
-file located in the tests directory has a function called suite, which is
-executed using this script. Running the script with the verbose keyword exposes
-the names of all available test cases.
+module. This script is a simple wrapper which changes directory to ObsPy's
+base directory then simply passes all input params to pytest. The intention
+of this script is to make it easy for users to test their installation of
+ObsPy. When working on ObsPy development it is recommend to use pytest
+directly.
 
 :copyright:
     The ObsPy Development Team (devs@obspy.org)
@@ -22,65 +23,35 @@ the names of all available test cases.
 
         $ obspy-runtests
 
-    or via Python interpreter
-
-    >>> import obspy.core
-    >>> obspy.core.run_tests()  # DOCTEST: +SKIP
-
 (2) Run all tests on command line::
 
         $ obspy-runtests --all
-
-    or via Python interpreter
-
-    >>> import obspy.core
-    >>> obspy.core.run_tests(all=True)  # DOCTEST: +SKIP
 
 (3) Verbose output::
 
         $ obspy-runtests -v
 
-    or
-
-    >>> import obspy.core
-    >>> obspy.core.run_tests(verbosity=2)  # DOCTEST: +SKIP
-
 (4) Run tests of module :mod:`obspy.io.mseed`::
 
-        $ obspy-runtests obspy.io.mseed.tests.suite
-
-    or as shortcut::
-
-        $ obspy-runtests io.mseed
+        $ obspy-runtests io/mseed
 
 (5) Run tests of multiple modules, e.g. :mod:`obspy.io.wav` and
     :mod:`obspy.io.sac`::
 
-        $ obspy-runtests io.wav io.sac
+        $ obspy-runtests io/wav io/sac
 
 (6) Run a specific test case::
 
         $ obspy-runtests obspy.core.tests.test_stats.StatsTestCase.test_init
 
-    or
-
-    >>> import obspy.core
-    >>> tests = ['obspy.core.tests.test_stats.StatsTestCase.test_init']
-    >>> obspy.core.run_tests(verbosity=2, tests=tests)  # DOCTEST: +SKIP
-
 (7) Report test results to https://tests.obspy.org/::
 
         $ obspy-runtests -r
 
-(8) To get a full list of all options, use::
+(8) To get a full list of all pytest options, use::
 
         $ obspy-runtests --help
 
-Of course you may combine most of the options here, e.g. in order to test
-all modules except the module obspy.io.sh and obspy.clients.seishub, have a
-verbose output and report everything, you would run::
-
-        $ obspy-runtests -r -v -x clients.seishub -x io.sh --all
 """
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
