@@ -13,13 +13,12 @@ from __future__ import (absolute_import, division, print_function,
 from future.builtins import *  # NOQA
 from future.utils import native_str
 
+import contextlib
 import os
 import platform
 import shlex
 import sys
 import time
-import warnings
-from argparse import ArgumentParser
 from collections import defaultdict, Counter
 
 import numpy as np
@@ -318,172 +317,18 @@ def _send_report(session, params):
         print(response.reason)
 
 
-def _configure_parser():
+@contextlib.contextmanager
+def _temporary_cd(path):
     """
-    Configure the command line parser.
+    Change directory temporarily to path, then change back to cwd on exit.
     """
-    from obspy.core.util.version import get_git_version
-    hostname = platform.node().split('.', 1)[0]
-
-    parser = ArgumentParser(prog='obspy-runtests',
-                            description='A command-line program that runs all '
-                                        'ObsPy tests.')
-    parser.add_argument('-V', '--version', action='version',
-                        version='%(prog)s ' + get_git_version())
-    parser.add_argument('-v', '--verbose', action='store_true',
-                        help='verbose mode')
-    parser.add_argument('-q', '--quiet', action='store_true',
-                        help='quiet mode')
-    parser.add_argument('--raise-all-warnings', action='store_true',
-                        help='All warnings are raised as exceptions when this '
-                             'flag is set. Only for debugging purposes.')
-
-    # filter options
-    filter = parser.add_argument_group('Module Filter',
-                                       'Providing no modules will test all '
-                                       'ObsPy modules which do not require an '
-                                       'active network connection.')
-    filter.add_argument('-a', '--all', action='store_true',
-                        dest='test_all_modules',
-                        help='test all modules (including network modules)')
-    filter.add_argument('-x', '--exclude', action='append',
-                        help='exclude given module from test')
-    filter.add_argument('tests', nargs='*',
-                        help='test modules to run')
-
-    # timing / profile options
-    timing = parser.add_argument_group('Timing/Profile Options')
-    timing.add_argument('-t', '--timeit', action='store_true',
-                        help='shows accumulated run times of each module')
-    timing.add_argument('-s', '--slowest', default=0, type=int, dest='n',
-                        help='lists n slowest test cases')
-    timing.add_argument('-p', '--profile', action='store_true',
-                        help='uses cProfile, saves the results to file ' +
-                             'obspy.pstats and prints some profiling numbers')
-
-    # reporting options
-    report = parser.add_argument_group('Reporting Options')
-    report.add_argument('-r', '--report', action='store_true',
-                        help='automatically submit a test report')
-    report.add_argument('-d', '--dontask', action='store_true',
-                        help="don't explicitly ask for submitting a test "
-                             "report")
-    report.add_argument('-u', '--server', default=DEFAULT_TEST_SERVER,
-                        help='report server (default is tests.obspy.org)')
-    report.add_argument('-n', '--node', dest='hostname', default=hostname,
-                        help='nodename visible at the report server')
-    report.add_argument('-l', '--log', default=None,
-                        help='append log file to test report')
-    report.add_argument('--ci-url', default=None, dest="ci_url",
-                        help='URL to Continuous Integration job page.')
-    report.add_argument('--pr-url', default=None,
-                        dest="pr_url", help='Github (Pull Request) URL.')
-
-    # other options
-    others = parser.add_argument_group('Additional Options')
-    others.add_argument('--tutorial', action='store_true',
-                        help='add doctests in tutorial')
-    others.add_argument('--no-flake8', action='store_true',
-                        help='skip code formatting test')
-    others.add_argument('--keep-images', action='store_true',
-                        help='store images created during image comparison '
-                             'tests in subfolders of baseline images')
-    others.add_argument('--keep-only-failed-images', action='store_true',
-                        help='when storing images created during testing, '
-                             'only store failed images and the corresponding '
-                             'diff images (but not images that passed the '
-                             'corresponding test).')
-    return parser
+    here = os.getcwd()
+    os.chdir(path)
+    yield
+    os.chdir(here)
 
 
-def _obspy_to_pytest_nodeid(obspy_str):
-    """
-    Convert an obspy test node id to a pytest nodeid.
-
-    Eg; io.mseed -> obspy/io/mseed/tests
-    """
-    # get base path
-    path = []
-    # iterate each node in obspy_str, try to determine where file ends
-    # and test cases start
-    for node in obspy_str.split('.'):
-        # if the current node is a directory append to path
-        if os.path.isdir(os.path.join(*(path + [node]))):
-            path.append(node)
-        # if the current node is a python file
-        elif os.path.exists(os.path.join(*(path + [node + '.py']))):
-            path.append(node + '.py')
-        # else it may be a test case, add :: and append to path
-        else:
-            path[-1] = path[-1] + '::' + node
-    return os.path.join(*path)
-
-
-def _convert_to_pytest_input(args, input_args=None):
-    """
-    Translate the parsed obspy-runtest arguments into pytest input.
-    """
-    out = []  # init a list for storing output
-
-    # if version is specified just bring obspy version and exit
-    if getattr(args, 'version', None):
-        print(get_git_version())
-        sys.exit(0)
-    # handle setting verbosity and warning filters
-    if args.verbose:
-        out.append(['--verbose %d' % args.verbose])
-    elif args.quiet:
-        out.append('--quiet')
-        # TODO test if this actually suppresses warnings in pytest runner
-        warnings.simplefilter("ignore", DeprecationWarning)
-        warnings.simplefilter("ignore", UserWarning)
-    else:  # Leave
-        # show all NumPy warnings
-        np.seterr(all='print')
-        # ignore user warnings
-        warnings.simplefilter("ignore", UserWarning)
-    # handle filtering options
-    if args.raise_all_warnings:  # raise all warnings as errors
-        np.seterr(all='raise')
-        out.append('--Werror')
-    if args.test_all_modules:
-        out.append('--all')
-    for exclude in args.exclude or []:
-        out.append('--exclude %s' % _obspy_to_pytest_nodeid(exclude))
-
-    # handle timing options
-    # TODO figure out timeit and profile
-    if getattr(args, 'slowest', None) is not None:
-        out.append('--durations %d' % args.slowest)
-
-    # handle reporting options
-    if args.report or 'OBSPY_REPORT' in os.environ.keys():
-        out.append('--report')
-    if args.server or 'OBSPY_REPORT_SERVER' in os.environ.keys():
-        server = os.environ.get('OBSPY_REPORT_SERVER') or args.server
-        if server != DEFAULT_TEST_SERVER:
-            out.append('--server %s' % server)
-    if getattr(args, 'node', None):
-        out.append('--node %s' % args.node)
-    if getattr(args, 'log', None):
-        out.append('--log')
-    if getattr(args, 'ci_url', None):
-        out.append('--ci-url %s' % args.ci_url)
-    if getattr(args, 'pr_url', None):
-        out.append('--pr-url %s' % args.pr_url)
-
-    # TODO figure out what to do with these
-    # if args.keep_images:
-    #     os.environ['OBSPY_KEEP_IMAGES'] = ""
-    # if args.keep_only_failed_images:
-    #     os.environ['OBSPY_KEEP_ONLY_FAILED_IMAGES'] = ""
-    # if args.no_flake8:
-    #     os.environ['OBSPY_NO_FLAKE8'] = ""
-
-    return out
-
-
-def run_tests(argv=None, rootdir=None):
+def run_tests(argv='', rootdir=None):
     """
     Run the obspy test suite with pytest.
 
@@ -497,22 +342,12 @@ def run_tests(argv=None, rootdir=None):
         pass
     MatplotlibBackend.switch_backend("AGG", sloppy=False)
     # get input and make sure it is split
-    input_args = sys.argv[1:] if argv is None else shlex.split(argv)
+    input_args = sys.argv[1:] if not argv else shlex.split(argv)
     # All arguments are used by the test runner and should not interfere
     # with any other module that might also parse them, e.g. flake8.
     if sys.argv:
         sys.argv = sys.argv[:1]
-    # configure parser and parse input
-    parser = _configure_parser()
-    args = parser.parse_args(input_args)
-    # convert input to a pytest-able string
-    pytest_input = _convert_to_pytest_input(args, input_args)
-    if rootdir is not None:
-        here = os.getcwd()
-        os.chdir(rootdir)
-    # run pytest!
-    results = pytest.main(pytest_input)
-    if rootdir is not None:
-        os.chdir(here)
+    with _temporary_cd(rootdir or os.getcwd()):
+        # Run pytest passing it all input args.
+        results = pytest.main(input_args)
     return results
-
