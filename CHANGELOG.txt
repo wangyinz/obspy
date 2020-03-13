@@ -1,3 +1,16 @@
+master
+======
+
+Work on this release was in parts and among others supported by the following
+institutions/companies and grants (in alphabetical order):
+ - The Royal Observatory of Belgium
+ 
+Changes:
+- obspy.io.kinemetrics:
+   * adds the ``raw`` argument to the ``read_evt`` method to allow obtaining 
+     the raw data bits stored in the evt file (see #2582)
+
+
 1.2.1 (doi: 10.5281/zenodo.3706479)
 ===================================
 
